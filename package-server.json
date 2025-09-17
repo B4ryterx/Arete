@@ -1,0 +1,21 @@
+{
+  "name": "ai-learning-app-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Backend server for AI-Powered Learning App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "keywords": ["ai", "learning", "k2", "education"],
+  "author": "Brandon Adebayo",
+  "license": "MIT"
+}
