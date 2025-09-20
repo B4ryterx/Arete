@@ -1,0 +1,18 @@
+Test Content for Quiz Generation
+
+This is a test file to verify that file upload functionality works in Quiz Mode.
+
+Topics covered:
+1. Photosynthesis - The process by which plants convert light energy into chemical energy
+2. Cell Division - The process by which cells reproduce and grow
+3. Genetics - The study of heredity and variation in organisms
+4. Ecology - The study of interactions between organisms and their environment
+
+Key concepts:
+- Light reactions occur in the thylakoids
+- Calvin cycle occurs in the stroma
+- Mitosis has four phases: prophase, metaphase, anaphase, telophase
+- DNA contains genetic information
+- Ecosystems have producers, consumers, and decomposers
+
+This content should be used to generate quiz questions about biology topics.

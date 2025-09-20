@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Progress } from './ui/progress'
 import { Badge } from './ui/badge'
 import { askK2Think } from '../lib/k2'
+import * as pdfjsLib from 'pdfjs-dist'
 import { CheckCircle, X, Clock, Brain, ArrowLeft, RotateCcw, Target, Award, Zap, Loader2, Lightbulb, MessageSquare, Sparkles, Settings, BookOpen, Star } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -36,6 +37,17 @@ export function QuizMode({ onNavigate }: QuizModeProps) {
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
   const [generatedQuestions, setGeneratedQuestions] = useState<any[]>([])
   const [useGeneratedQuiz, setUseGeneratedQuiz] = useState(false)
+  
+  // Custom topic and file upload states
+  const [customTopic, setCustomTopic] = useState('')
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [fileContent, setFileContent] = useState('')
+  const [isProcessingFile, setIsProcessingFile] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Topic prompt states
+  const [showTopicPrompt, setShowTopicPrompt] = useState(true)
+  const [tempTopic, setTempTopic] = useState('')
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 100)
@@ -58,11 +70,71 @@ export function QuizMode({ onNavigate }: QuizModeProps) {
   }, [customTimeLimit])
 
   const quiz = {
-    title: "Machine Learning Fundamentals",
-    subject: "AI & Data Science",
+    title: customTopic ? `${customTopic} Quiz` : "Flowering Plants Mastery",
+    subject: customTopic || "Botany & Plant Biology",
     totalQuestions: useGeneratedQuiz ? generatedQuestions.length : questionCount,
     timeLimit: customTimeLimit,
     difficulty: rigorLevel.charAt(0).toUpperCase() + rigorLevel.slice(1)
+  }
+
+  // PDF processing function using PDF.js
+  const processPDF = async (file: File): Promise<string> => {
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let text = ''
+      
+      // Extract text from all pages
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const textContent = await page.getTextContent()
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(' ')
+        text += pageText + '\n\n'
+      }
+      
+      return text.trim()
+    } catch (error) {
+      console.error('PDF processing error:', error)
+      throw new Error(`Failed to process PDF: ${error}`)
+    }
+  }
+
+  // File processing function
+  const processUploadedFile = async (file: File) => {
+    setIsProcessingFile(true)
+    try {
+      const fileType = file.type
+      let content = ''
+      
+      if (fileType === 'application/pdf') {
+        // For PDF files, extract text using PDF.js
+        try {
+          const pdfText = await processPDF(file)
+          content = `PDF Content from ${file.name}:\n\n${pdfText}`
+        } catch (pdfError) {
+          console.error('PDF processing error:', pdfError)
+          content = `PDF Content: ${file.name} - Error processing PDF: ${pdfError}`
+        }
+      } else if (fileType.includes('text/')) {
+        content = await file.text()
+      } else if (fileType === 'text/csv') {
+        const text = await file.text()
+        content = `CSV Data from ${file.name}:\n${text}`
+      } else {
+        content = `File: ${file.name} - Content extraction for this file type is not yet implemented.`
+      }
+      
+      setFileContent(content)
+      setUploadedFile(file)
+      console.log('File processed successfully:', file.name)
+    } catch (error) {
+      console.error('Error processing file:', error)
+      setFileContent(`Error processing file: ${error}`)
+    } finally {
+      setIsProcessingFile(false)
+    }
   }
 
   // K2 AI Functions for Quiz Generation
@@ -89,15 +161,19 @@ export function QuizMode({ onNavigate }: QuizModeProps) {
         throw new Error('K2 API not working properly')
       }
       
+      // Determine the topic for quiz generation
+      const topic = customTopic || 'flowering plants'
+      const contentContext = fileContent ? `\n\nBased on this uploaded content:\n${fileContent}` : ''
+      
       // Now try to generate quiz
       const result = await askK2Think([
         {
           role: "system",
-          content: `Create a ${rigorLevel} level Machine Learning quiz with exactly ${questionCount} questions. Return valid JSON only.`
+          content: `Create a ${rigorLevel} level quiz about ${topic} with exactly ${questionCount} questions. Return valid JSON only.${fileContent ? ' Use the provided content to create relevant questions.' : ''}`
         },
         {
           role: "user",
-          content: `Generate ${questionCount} questions for ${rigorLevel} level. Format: {"questions": [{"id": 1, "question": "Q?", "options": ["A", "B", "C", "D"], "correct": 0, "explanation": "..."}]}`
+          content: `Generate ${questionCount} questions about ${topic} for ${rigorLevel} level.${contentContext}\n\nFormat: {"questions": [{"id": 1, "question": "Q?", "options": ["A", "B", "C", "D"], "correct": 0, "explanation": "..."}]}`
         }
       ])
       
@@ -231,7 +307,7 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
         },
         {
           role: "user",
-          content: `Recommend a time limit for a ${rigorLevel} level quiz with ${questionCount} questions on Machine Learning Fundamentals. Return only the number of seconds.`
+          content: `Recommend a time limit for a ${rigorLevel} level quiz with ${questionCount} questions on ${customTopic || 'Flowering Plants'}. Return only the number of seconds.`
         }
       ])
       
@@ -279,7 +355,7 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
       const result = await askK2Think([
         {
           role: "system",
-          content: "You are an expert tutor. Provide a clear, detailed explanation of the correct answer to this quiz question. Explain why the correct answer is right and why the other options are wrong. Be educational and help the student understand the concept."
+          content: `You are an expert tutor specializing in ${customTopic || 'flowering plants'}. Provide a clear, detailed explanation of the correct answer to this quiz question about ${customTopic || 'flowering plants'}. Explain why the correct answer is right and why the other options are wrong. Be educational and help the student understand the concepts.`
         },
         {
           role: "user",
@@ -303,7 +379,7 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
       const result = await askK2Think([
         {
           role: "system",
-          content: "You are a helpful tutor. Provide a hint to guide the student toward the correct answer without giving it away. Focus on key concepts, common approaches, or things to consider. Be encouraging and educational."
+          content: `You are a helpful tutor specializing in ${customTopic || 'flowering plants'}. Provide a hint to guide the student toward the correct answer without giving it away. Focus on key concepts related to ${customTopic || 'plant biology'}. Be encouraging and educational.`
         },
         {
           role: "user",
@@ -330,11 +406,11 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
       const result = await askK2Think([
         {
           role: "system",
-          content: "You are a learning analytics expert. Analyze the student's quiz performance and provide insights on: 1) Overall performance and strengths, 2) Areas that need improvement, 3) Study recommendations, 4) Learning strategies. Be encouraging and constructive."
+          content: `You are a learning analytics expert specializing in ${customTopic || 'botany education'}. Analyze the student's quiz performance on ${customTopic || 'flowering plants'} and provide insights on: 1) Overall performance and strengths, 2) Areas that need improvement, 3) Study recommendations for ${customTopic || 'the subject'}, 4) Learning strategies for mastering the concepts. Be encouraging and constructive.`
         },
         {
           role: "user",
-          content: `Quiz: ${quiz.title}\nSubject: ${quiz.subject}\n\nPerformance:\n- Total Questions: ${totalCount}\n- Correct Answers: ${correctCount}\n- Accuracy: ${accuracy}%\n\nQuestion Results:\n${answers.map((a, i) => `Q${i + 1}: ${a.correct ? 'Correct' : 'Incorrect'}`).join('\n')}\n\nPlease analyze this performance and provide recommendations.`
+          content: `Quiz: ${quiz.title}\nSubject: ${quiz.subject}\n\nPerformance:\n- Total Questions: ${totalCount}\n- Correct Answers: ${correctCount}\n- Accuracy: ${accuracy}%\n\nQuestion Results:\n${answers.map((a, i) => `Q${i + 1}: ${a.correct ? 'Correct' : 'Incorrect'}`).join('\n')}\n\nPlease analyze this performance on ${customTopic || 'flowering plants'} knowledge and provide study recommendations for ${customTopic || 'the subject'}.`
         }
       ]);
       setAiAnalysis(result);
@@ -348,63 +424,243 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
   const defaultQuestions = [
     {
       id: 1,
-      question: "What is the main goal of supervised learning?",
+      question: "What is the primary function of flowers in flowering plants?",
       options: [
-        "To learn patterns from labeled training data",
-        "To discover hidden structures in data", 
-        "To optimize rewards through trial and error",
-        "To reduce data dimensionality"
+        "To provide structural support",
+        "To perform photosynthesis",
+        "To facilitate reproduction through pollination",
+        "To store water and nutrients"
       ],
-      correct: 0,
-      explanation: "Supervised learning aims to learn a mapping from inputs to outputs using labeled training data, where the correct answers are provided during training."
+      correct: 2,
+      explanation: "Flowers are the reproductive structures of flowering plants (angiosperms) and their primary function is to facilitate reproduction through pollination and subsequent seed formation."
     },
     {
       id: 2,
-      question: "Which algorithm is best suited for classification tasks with non-linear decision boundaries?",
+      question: "Which part of the flower contains the male reproductive organs?",
       options: [
-        "Linear Regression",
-        "Support Vector Machine with RBF kernel",
-        "Logistic Regression", 
-        "Naive Bayes"
+        "Pistil",
+        "Stamen",
+        "Sepal",
+        "Petal"
       ],
       correct: 1,
-      explanation: "SVM with RBF (Radial Basis Function) kernel can handle non-linear decision boundaries by mapping data to higher dimensions."
+      explanation: "The stamen is the male reproductive organ of a flower, consisting of the anther (which produces pollen) and the filament (stalk)."
     },
     {
       id: 3,
-      question: "What does the bias-variance tradeoff represent?",
+      question: "What is the process called when pollen from one flower lands on the stigma of another flower?",
       options: [
-        "The relationship between model complexity and training time",
-        "The balance between underfitting and overfitting",
-        "The choice between supervised and unsupervised learning",
-        "The tradeoff between accuracy and interpretability"
+        "Fertilization",
+        "Pollination",
+        "Germination",
+        "Photosynthesis"
       ],
       correct: 1,
-      explanation: "The bias-variance tradeoff describes the balance between a model's ability to minimize bias (underfitting) and variance (overfitting)."
+      explanation: "Pollination is the transfer of pollen from the anther to the stigma. Fertilization occurs later when the pollen tube reaches the ovule."
     },
     {
       id: 4,
-      question: "Which technique is commonly used to prevent overfitting?",
+      question: "Which of the following is NOT a part of the pistil?",
       options: [
-        "Increasing model complexity",
-        "Using more features",
-        "Cross-validation and regularization",
-        "Reducing training data"
+        "Stigma",
+        "Style",
+        "Ovary",
+        "Anther"
       ],
-      correct: 2,
-      explanation: "Cross-validation helps evaluate model performance while regularization techniques like L1/L2 penalty help prevent overfitting."
+      correct: 3,
+      explanation: "The pistil (female reproductive organ) consists of the stigma, style, and ovary. The anther is part of the stamen (male reproductive organ)."
     },
     {
       id: 5,
-      question: "What is the purpose of feature scaling in machine learning?",
+      question: "What type of pollination occurs when pollen is transferred within the same flower?",
       options: [
-        "To reduce the number of features",
-        "To ensure all features contribute equally to distance calculations",
-        "To increase model accuracy automatically",
-        "To speed up data loading"
+        "Cross-pollination",
+        "Self-pollination",
+        "Wind pollination",
+        "Insect pollination"
       ],
       correct: 1,
-      explanation: "Feature scaling ensures that features with different scales don't dominate distance-based algorithms like KNN or SVM."
+      explanation: "Self-pollination occurs when pollen from the anther of a flower is transferred to the stigma of the same flower, while cross-pollination involves different flowers."
+    },
+    {
+      id: 6,
+      question: "Which part of the flower protects the developing bud before it opens?",
+      options: [
+        "Petals",
+        "Sepals",
+        "Stamens",
+        "Pistil"
+      ],
+      correct: 1,
+      explanation: "Sepals are the outermost whorl of flower parts that typically protect the developing flower bud before it opens and may also provide structural support."
+    },
+    {
+      id: 7,
+      question: "What is the collective term for all the petals of a flower?",
+      options: [
+        "Calyx",
+        "Corolla",
+        "Androecium",
+        "Gynoecium"
+      ],
+      correct: 1,
+      explanation: "The corolla is the collective term for all the petals of a flower, while calyx refers to all the sepals, androecium to all stamens, and gynoecium to all pistils."
+    },
+    {
+      id: 8,
+      question: "Which type of flower has both male and female reproductive organs?",
+      options: [
+        "Perfect flower",
+        "Imperfect flower",
+        "Complete flower",
+        "Incomplete flower"
+      ],
+      correct: 0,
+      explanation: "A perfect flower (bisexual) contains both stamens and pistils, while an imperfect flower (unisexual) has only stamens (male) or pistils (female)."
+    },
+    {
+      id: 9,
+      question: "What is the term for the fusion of two or more carpels in a single pistil?",
+      options: [
+        "Syncarpy",
+        "Apocarpy",
+        "Monocarpy",
+        "Polycarpy"
+      ],
+      correct: 0,
+      explanation: "Syncarpy refers to the fusion of two or more carpels to form a single compound pistil, while apocarpy describes separate, unfused carpels."
+    },
+    {
+      id: 10,
+      question: "Which type of placentation occurs when ovules are attached to the central axis of a compound ovary?",
+      options: [
+        "Parietal placentation",
+        "Axile placentation",
+        "Free-central placentation",
+        "Basal placentation"
+      ],
+      correct: 1,
+      explanation: "Axile placentation occurs when ovules are attached to the central axis of a compound ovary, typically found in syncarpous ovaries with multiple locules."
+    },
+    {
+      id: 11,
+      question: "What is the term for flowers that open only at night and are typically pollinated by moths?",
+      options: [
+        "Diurnal flowers",
+        "Nocturnal flowers",
+        "Crepuscular flowers",
+        "Vespertine flowers"
+      ],
+      correct: 1,
+      explanation: "Nocturnal flowers open at night and are typically white or pale-colored with strong fragrances to attract night-flying pollinators like moths."
+    },
+    {
+      id: 12,
+      question: "Which mechanism prevents self-pollination by having male and female parts mature at different times?",
+      options: [
+        "Dichogamy",
+        "Heterostyly",
+        "Self-incompatibility",
+        "Cleistogamy"
+      ],
+      correct: 0,
+      explanation: "Dichogamy is the temporal separation of male and female reproductive phases, where stamens and pistils mature at different times to prevent self-pollination."
+    },
+    {
+      id: 13,
+      question: "What is the term for the specialized cells that form the pollen tube during fertilization?",
+      options: [
+        "Generative cells",
+        "Tube cells",
+        "Sperm cells",
+        "Synergid cells"
+      ],
+      correct: 1,
+      explanation: "Tube cells (or vegetative cells) are responsible for forming the pollen tube that grows down the style to deliver sperm cells to the ovule."
+    },
+    {
+      id: 14,
+      question: "Which type of inflorescence has flowers arranged in a flat-topped cluster with pedicels of equal length?",
+      options: [
+        "Raceme",
+        "Corymb",
+        "Umbel",
+        "Spike"
+      ],
+      correct: 1,
+      explanation: "A corymb is a type of inflorescence where flowers are arranged in a flat-topped cluster with pedicels of different lengths, creating a level surface."
+    },
+    {
+      id: 15,
+      question: "What is the term for the process where a flower changes from one sex to another during its lifetime?",
+      options: [
+        "Dioecy",
+        "Monoecy",
+        "Sequential hermaphroditism",
+        "Andromonoecy"
+      ],
+      correct: 2,
+      explanation: "Sequential hermaphroditism (or dichogamy) occurs when a flower changes from male to female (protandry) or female to male (protogyny) during its development."
+    },
+    {
+      id: 16,
+      question: "Which structure in the ovule develops into the seed coat after fertilization?",
+      options: [
+        "Integuments",
+        "Nucellus",
+        "Embryo sac",
+        "Funiculus"
+      ],
+      correct: 0,
+      explanation: "The integuments are the outer layers of the ovule that develop into the seed coat (testa) after fertilization, protecting the developing embryo."
+    },
+    {
+      id: 17,
+      question: "What is the term for flowers that have radial symmetry and can be divided into equal halves by any longitudinal plane?",
+      options: [
+        "Zygomorphic",
+        "Actinomorphic",
+        "Asymmetric",
+        "Bilateral"
+      ],
+      correct: 1,
+      explanation: "Actinomorphic (radial) flowers have radial symmetry and can be divided into equal halves by any longitudinal plane passing through the center."
+    },
+    {
+      id: 18,
+      question: "Which type of fruit develops from a single ovary of a single flower?",
+      options: [
+        "Aggregate fruit",
+        "Simple fruit",
+        "Multiple fruit",
+        "Accessory fruit"
+      ],
+      correct: 1,
+      explanation: "Simple fruits develop from a single ovary of a single flower, such as cherries, peaches, or tomatoes."
+    },
+    {
+      id: 19,
+      question: "What is the term for the specialized structure that guides pollen tubes to the micropyle?",
+      options: [
+        "Funiculus",
+        "Hilum",
+        "Raphe",
+        "Chalaza"
+      ],
+      correct: 2,
+      explanation: "The raphe is a ridge or groove on the ovule that often guides the pollen tube to the micropyle during fertilization."
+    },
+    {
+      id: 20,
+      question: "Which mechanism involves the physical separation of anthers and stigmas to prevent self-pollination?",
+      options: [
+        "Heterostyly",
+        "Herbogamy",
+        "Dichogamy",
+        "Self-incompatibility"
+      ],
+      correct: 1,
+      explanation: "Herbogamy (or herkogamy) is the spatial separation of anthers and stigmas within the same flower to prevent self-pollination."
     }
   ]
 
@@ -632,6 +888,79 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
 
                 {showQuizSettings && (
                   <div className="space-y-4">
+                    {/* Custom Topic Input */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Custom Topic (Optional)</label>
+                      <input
+                        type="text"
+                        value={customTopic}
+                        onChange={(e) => setCustomTopic(e.target.value)}
+                        placeholder="e.g., Photosynthesis, Cell Division, Genetics..."
+                        className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Leave empty to use default flowering plants topic
+                      </p>
+                    </div>
+
+                    {/* File Upload */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Upload Study Material (Optional)</label>
+                      <div className="space-y-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".pdf,.txt,.csv,.doc,.docx"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              processUploadedFile(file)
+                            }
+                          }}
+                          className="hidden"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => fileInputRef.current?.click()}
+                            variant="outline"
+                            size="sm"
+                            disabled={isProcessingFile}
+                            className="border-green-500/30 text-green-300 hover:bg-green-500/20"
+                          >
+                            {isProcessingFile ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <BookOpen className="w-4 h-4 mr-2" />
+                            )}
+                            {isProcessingFile ? 'Processing...' : 'Upload File'}
+                          </Button>
+                          {uploadedFile && (
+                            <Button
+                              onClick={() => {
+                                setUploadedFile(null)
+                                setFileContent('')
+                                if (fileInputRef.current) fileInputRef.current.value = ''
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="border-red-500/30 text-red-300 hover:bg-red-500/20"
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                        {uploadedFile && (
+                          <div className="text-sm text-green-400 bg-green-600/10 p-2 rounded border border-green-500/20">
+                            ✅ {uploadedFile.name} uploaded successfully
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-500">
+                          Supported: PDF, TXT, CSV, DOC, DOCX files
+                        </p>
+                      </div>
+                    </div>
+
                     {/* Question Count */}
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">Number of Questions</label>
@@ -752,11 +1081,11 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
 
                 {/* K2 Enhanced Features - Now Working */}
                 <div className="mt-4 bg-purple-950/20 p-4 rounded-xl border border-purple-500/20">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Brain className="w-4 h-4 text-purple-400" />
-                    <span className="text-purple-300 font-medium">K2 Enhanced Features</span>
+                <div className="flex items-center gap-2 mb-2">
+                  <Brain className="w-4 h-4 text-purple-400" />
+                  <span className="text-purple-300 font-medium">K2 Enhanced Features</span>
                     <Badge className="bg-green-600/20 text-green-300 text-xs">Active</Badge>
-                  </div>
+                </div>
                   <div className="text-gray-400 text-sm space-y-1">
                     <p>✅ AI-generated personalized questions</p>
                     <p>✅ Adaptive difficulty based on performance</p>
@@ -1066,10 +1395,10 @@ Provide ONLY a number representing the time limit in seconds. For example: 900`
                   transition={{ delay: 0.2 }}
                 >
                   <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2 text-white">
-                      <Brain className="w-5 h-5 text-green-400" />
-                      Question {currentQuestion + 1}
-                    </CardTitle>
+                  <CardTitle className="flex items-center gap-2 text-white">
+                    <Brain className="w-5 h-5 text-green-400" />
+                    Question {currentQuestion + 1}
+                  </CardTitle>
                     <div className="flex gap-2">
                       <Button
                         onClick={getAIHint}
